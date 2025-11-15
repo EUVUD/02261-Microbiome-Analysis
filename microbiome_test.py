@@ -75,23 +75,28 @@ def AlignmentMatch(sequence, library):
     best_score = -10000000000
     best_match = None
 
-    #add your code here to find the best match using alignment
+    for x in library:
+        score, loc, matrix = alignment.local_align(sequence, library[x])
+        if score > best_score:
+            best_score = score
+            best_match = x # or do we want to return the actual sequence, library[x] ?
 
     return best_score, best_match
+
 if __name__ == "__main__":
-   # stuff only to run when not called via 'import' here
-
-
+    # stuff only to run when not called via 'import' here
 
     fn = "bacterial_16s_genes.fa"
     sequences_16s = Load16SFastA(fn, fraction = 0.015)
 
-
     print("Loaded %d 16s sequences." % len(sequences_16s))
+
     library, queries = split_dataset(sequences_16s, 200, 50)
     print("Library of length %d, Queries of length %d" % (len(library), len(queries)))
     print(queries)
-
+    seq1 = queries['RS_GCF_001553625.1~NZ_CP014230.1 d__Bacteria;p__Desulfobacterota;c__Desulfovibrionia;o__Desulfovibrionales;f__Desulfomicrobiaceae;g__Desulfomicrobium;s__ 1548 2783374']
+    best_score, best_match = AlignmentMatch(seq1, library)
+    print("Best score: %d, \nBest match: %s" % (best_score, best_match))
     kmer_16s_sequences = ConvertLibaryToKmerSets(sequences_16s, K=6)
 
 
