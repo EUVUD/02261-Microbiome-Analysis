@@ -173,6 +173,23 @@ def find_agreement(queries, library):
 
     return agreements
 
+ALL_LETTERS = ["A", "C", "G", "T"]
+
+def mutate_string(query, rate):
+    new_query = ""
+    for char in query:
+        change = numpy.random.binomial(1, rate)
+        if change:
+            try:
+                ALL_LETTERS.remove(char)
+                new_query += random.choice(ALL_LETTERS)
+                ALL_LETTERS.append(char)
+            except:
+                new_query += random.choice(ALL_LETTERS)
+        else:
+            new_query += char
+    
+    return new_query
 
 
 
@@ -195,6 +212,41 @@ if __name__ == "__main__":
     plt.ylabel("Agreement")
     plt.xticks([1, 3, 5, 7, 9, 11, 13, 15, 17, 19])
     plt.show()
+
+
+    print("=============== Testing with 1% mutated queries ===============")
+    library, queries = split_dataset(sequences_16s, 10, 5)
+    print("Library of length %d, Queries of length %d" % (len(library), len(queries)))
+
+    for key in queries.keys():
+        queries[key] = mutate_string(queries[key], 1.0/100)
+
+    agreements = find_agreement(library, queries)
+    print(agreements)
+
+
+    plt.plot(ks, agreements)
+    plt.title("Agreement Curve- 1% mutated")
+    plt.xlabel("K-mer length")
+    plt.ylabel("Agreement")
+    plt.xticks([1, 3, 5, 7, 9, 11, 13, 15, 17, 19])
+    plt.show()
+
+
+    print("=============== Testing with 10% mutated queries ===============")
+    library, queries = split_dataset(sequences_16s, 10, 5)
+    print("Library of length %d, Queries of length %d" % (len(library), len(queries)))
+
+    for key in queries.keys():
+        queries[key] = mutate_string(queries[key], 1.0/10)
+
+    plt.plot(ks, agreements)
+    plt.title("Agreement Curve- 10% mutated")
+    plt.xlabel("K-mer length")
+    plt.ylabel("Agreement")
+    plt.xticks([1, 3, 5, 7, 9, 11, 13, 15, 17, 19])
+    plt.show()
+
 
     # print(queries)
 
