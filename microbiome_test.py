@@ -175,6 +175,71 @@ def find_agreement(queries, library):
 
 ALL_LETTERS = ["A", "C", "G", "T"]
 
+#Task 5: Minimizer
+
+def get_minimizer(sequence, m, k):
+    minimizers = set()
+    n = len(sequence)
+
+    win_num = n // (m - k)
+
+    for i in range(win_num):
+        windom = sequence[i*(m-k): i*(m-k) + m]
+
+        kmer_list = []
+
+        for j in range(m - k + 1):
+            kmer = windom[j:j + k]
+            kmer_list.append(kmer)
+
+        minimizers.add(min(kmer_list))
+
+    return minimizers
+
+def generate_min_library(input_library, m, k):
+    min_library = {}
+    for key in input_library.keys():
+        seq = input_library[key]
+        min_library[key] = get_minimizer(seq, m, k)
+    return min_library
+
+def find_matched_keys(query_seq, min_library, m, k):
+    query_minimizer = get_minimizer(query_seq, m, k)
+    matched_keys = []
+    for key in min_library.keys():
+        lib_minimizers = min_library[key]
+        if (lib_minimizers & query_minimizer):
+            matched_keys.append(key)
+    return matched_keys
+
+def find_minimizer_agreement(queries, min_library, seq_lib, m, k):
+    agreements = 0
+    total = len(queries)
+
+    for key in queries.keys():
+        new_seq_lib = dict()
+        query_seq = queries[key]
+        matched_keys = find_matched_keys(query_seq, min_library, m, k)
+        for matched_key in matched_keys:
+            new_seq_lib[matched_key] = seq_lib[matched_key]
+        _, best_match = AlignmentMatch(query_seq, seq_lib)
+        seq_kmers = convert_seq_to_kmer_set(query_seq, k)
+        lib_kmers = ConvertLibraryToKmerSets(new_seq_lib, k)
+        _, kmer_best_match = KmerMatch(seq_kmers, lib_kmers)
+        if best_match == kmer_best_match:
+            agreements += 1
+    
+    return agreements / total
+
+def generate_agreement(queries, library):
+    win = [i for i in range(20, 66, 5)]
+    agreements = []
+    for w in win:
+        min_library = generate_min_library(library, m=w, k=7)
+        agreement = find_minimizer_agreement(queries, min_library, library, m=w, k=7)
+        agreements.append(agreement)
+    return agreements
+
 def mutate_string(query, rate):
     new_query = ""
     for char in query:
@@ -211,6 +276,15 @@ if __name__ == "__main__":
     plt.xlabel("K-mer length")
     plt.ylabel("Agreement")
     plt.xticks([1, 3, 5, 7, 9, 11, 13, 15, 17, 19])
+    plt.show()
+
+    #Task 6: Agreement Curve with minimizer
+    min_agreements = generate_agreement(queries, library)
+    plt.plot([i for i in range(20, 66, 5)], min_agreements)
+    plt.title("Minimizer Agreement Curve")
+    plt.xlabel("Window size (m)")
+    plt.ylabel("Agreement")
+    plt.xticks([i for i in range(20, 66, 5)])
     plt.show()
 
 
