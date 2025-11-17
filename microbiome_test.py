@@ -287,7 +287,7 @@ if __name__ == "__main__":
     plt.xticks([i for i in range(20, 66, 5)])
     plt.show()
 
-
+    #Task 7
     print("=============== Testing with 1% mutated queries ===============")
     library, queries = split_dataset(sequences_16s, 10, 5)
     print("Library of length %d, Queries of length %d" % (len(library), len(queries)))
@@ -295,9 +295,8 @@ if __name__ == "__main__":
     for key in queries.keys():
         queries[key] = mutate_string(queries[key], 1.0/100)
 
-    agreements = find_agreement(library, queries)
+    agreements = find_agreement(queries, library)
     print(agreements)
-
 
     plt.plot(ks, agreements)
     plt.title("Agreement Curve- 1% mutated")
@@ -313,6 +312,9 @@ if __name__ == "__main__":
 
     for key in queries.keys():
         queries[key] = mutate_string(queries[key], 1.0/10)
+
+    agreements = find_agreement(queries, library)
+    print(agreements)
 
     plt.plot(ks, agreements)
     plt.title("Agreement Curve- 10% mutated")
