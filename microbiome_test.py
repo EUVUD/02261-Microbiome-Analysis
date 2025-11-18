@@ -10,6 +10,7 @@ import alignment
 import copy
 import random
 import matplotlib.pyplot as plt
+import json
 
 def Load16SFastA(path, fraction = 1.0):
     # from a file, read in all sequences and store them in a dictionary
@@ -39,6 +40,15 @@ def split_dataset(seqs, lib_len, quer_len):
     random.shuffle(items)
     library = dict(items[quer_len:(quer_len + lib_len)])
     queries = dict(items[:quer_len])
+    return library, queries
+
+def load_datasets():
+    with open("library_len200.json", "r") as fp:
+        library = json.load(fp)
+
+    with open("queries_len50.json", "r") as fp:
+        queries = json.load(fp)
+
     return library, queries
 
 def ConvertLibraryToKmerSets(library, k=2):
@@ -101,6 +111,7 @@ def find_agreement(queries, library):
     '''
     agreements = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     total = len(queries)
+    print("Finding agreements.................")
 
     # Make kmer-sets for each k
     library_k1 = ConvertLibraryToKmerSets(library, k=1)
@@ -113,6 +124,7 @@ def find_agreement(queries, library):
     library_k15 = ConvertLibraryToKmerSets(library, k=15)
     library_k17 = ConvertLibraryToKmerSets(library, k=17)
     library_k19 = ConvertLibraryToKmerSets(library, k=19)
+    print("Finished converting library to kmer sets")
 
     queries_k1 = ConvertLibraryToKmerSets(queries, k=1)
     queries_k3 = ConvertLibraryToKmerSets(queries, k=3)
@@ -125,12 +137,17 @@ def find_agreement(queries, library):
     queries_k17 = ConvertLibraryToKmerSets(queries, k=17)
     queries_k19 = ConvertLibraryToKmerSets(queries, k=19)
 
+    print("Finished converting queries to kmer sets")
+    print("Starting local alignments")
     # Make dict for best match using local alignment
     alignment_match = {}
     for i in queries:
         seq = queries[i]
         best_score, best_match = AlignmentMatch(seq, library)
         alignment_match[i] = best_match
+    print("Finished local alignments")
+    with open('alignment_matches.json', 'w') as file:
+        json.dump(alignment_match, file, indent=4)
 
     # For each sequence, get the best match using kmer_alignment
     for i in queries:
@@ -264,10 +281,11 @@ if __name__ == "__main__":
 
     print("Loaded %d 16s sequences." % len(sequences_16s))
 
-    library, queries = split_dataset(sequences_16s, 10, 5)
+    # library, queries = split_dataset(sequences_16s, 10, 5)
+    library, queries = load_datasets()
     print("Library of length %d, Queries of length %d" % (len(library), len(queries)))
 
-    agreements = find_agreement(library, queries)
+    agreements = find_agreement(queries, library)
     print(agreements)
 
     ks = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19]
