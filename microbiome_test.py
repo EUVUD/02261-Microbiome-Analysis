@@ -9,6 +9,8 @@ import time
 import alignment
 import copy
 import random
+from collections import defaultdict
+import concurrent.futures
 import matplotlib.pyplot as plt
 
 def Load16SFastA(path, fraction = 1.0):
@@ -181,62 +183,199 @@ def get_minimizer(sequence, m, k):
     minimizers = set()
     n = len(sequence)
 
-    win_num = n // (m - k)
+    if not sequence or m <= 0 or k <= 0 or n < k:
+        return minimizers
+
+    step = max(1, m - k)
+    win_num = n // step
+    window_kmer_len = m - k + 1
+    total_kmers = n - k + 1
+
+    if window_kmer_len <= 0 or total_kmers <= 0 or win_num == 0:
+        return minimizers
+
+    kmers = [sequence[i:i + k] for i in range(total_kmers)]
+    max_kmer_start = total_kmers - 1
 
     for i in range(win_num):
-        windom = sequence[i*(m-k): i*(m-k) + m]
+        window_start = i * step
+        if window_start > max_kmer_start:
+            break
 
-        kmer_list = []
+        end_idx = min(window_start + window_kmer_len, total_kmers)
+        if end_idx <= window_start:
+            continue
 
-        for j in range(m - k + 1):
-            kmer = windom[j:j + k]
-            kmer_list.append(kmer)
-
-        minimizers.add(min(kmer_list))
+        window_min = min(kmers[idx] for idx in range(window_start, end_idx))
+        minimizers.add(window_min)
 
     return minimizers
 
 def generate_min_library(input_library, m, k):
     min_library = {}
-    for key in input_library.keys():
-        seq = input_library[key]
-        min_library[key] = get_minimizer(seq, m, k)
-    return min_library
+    minimizer_index = defaultdict(set)
 
-def find_matched_keys(query_seq, min_library, m, k):
-    query_minimizer = get_minimizer(query_seq, m, k)
-    matched_keys = []
-    for key in min_library.keys():
-        lib_minimizers = min_library[key]
-        if (lib_minimizers & query_minimizer):
-            matched_keys.append(key)
-    return matched_keys
+    for key, seq in input_library.items():
+        mins = get_minimizer(seq, m, k)
+        min_library[key] = mins
+        for minimizer in mins:
+            minimizer_index[minimizer].add(key)
 
-def find_minimizer_agreement(queries, min_library, seq_lib, m, k):
-    agreements = 0
+    return min_library, minimizer_index
+
+
+def generate_min_library_parallel(input_library, m, k, n_workers=2):
+    """Parallel version of generate_min_library using processes.
+
+    Returns (min_library, minimizer_index)
+    """
+    items = list(input_library.items())
+    min_library = {}
+    minimizer_index = defaultdict(set)
+
+    if n_workers is None or n_workers <= 1:
+        return generate_min_library(input_library, m, k)
+
+    def _compute_min(pair):
+        key, seq = pair
+        return key, get_minimizer(seq, m, k)
+
+    with concurrent.futures.ProcessPoolExecutor(max_workers=n_workers) as exc:
+        for key, mins in exc.map(_compute_min, items):
+            min_library[key] = mins
+            for minimizer in mins:
+                minimizer_index[minimizer].add(key)
+
+    return min_library, minimizer_index
+
+def find_matched_keys(query_seq, min_library, m, k, minimizer_index=None, query_minimizers=None):
+    if query_minimizers is None:
+        query_minimizers = get_minimizer(query_seq, m, k)
+
+    if not query_minimizers:
+        return []
+
+    if minimizer_index is not None:
+        matched = set()
+        for minimizer in query_minimizers:
+            matched.update(minimizer_index.get(minimizer, ()))
+        return list(matched)
+
+    return [
+        key
+        for key, lib_minimizers in min_library.items()
+        if lib_minimizers & query_minimizers
+    ]
+
+def find_minimizer_agreement(
+    queries,
+    min_library,
+    seq_lib,
+    m,
+    k,
+    minimizer_index=None,
+    alignment_cache=None,
+    query_kmer_cache=None,
+    library_kmer_cache=None,
+):
     total = len(queries)
+    if total == 0:
+        return 0.0
 
-    for key in queries.keys():
-        new_seq_lib = dict()
-        query_seq = queries[key]
-        matched_keys = find_matched_keys(query_seq, min_library, m, k)
-        for matched_key in matched_keys:
-            new_seq_lib[matched_key] = seq_lib[matched_key]
-        _, best_match = AlignmentMatch(query_seq, seq_lib)
-        seq_kmers = convert_seq_to_kmer_set(query_seq, k)
-        lib_kmers = ConvertLibraryToKmerSets(new_seq_lib, k)
-        _, kmer_best_match = KmerMatch(seq_kmers, lib_kmers)
-        if best_match == kmer_best_match:
+    if alignment_cache is None:
+        alignment_cache = {
+            key: AlignmentMatch(seq, seq_lib)[1]
+            for key, seq in queries.items()
+        }
+
+    if query_kmer_cache is None:
+        query_kmer_cache = {
+            key: convert_seq_to_kmer_set(seq, k)
+            for key, seq in queries.items()
+        }
+
+    if library_kmer_cache is None:
+        library_kmer_cache = ConvertLibraryToKmerSets(seq_lib, k)
+
+    agreements = 0
+
+    for key, query_seq in queries.items():
+        query_min = get_minimizer(query_seq, m, k)
+        if not query_min:
+            continue
+
+        matched_keys = find_matched_keys(
+            query_seq,
+            min_library,
+            m,
+            k,
+            minimizer_index=minimizer_index,
+            query_minimizers=query_min,
+        )
+
+        if not matched_keys:
+            continue
+
+        subset_kmers = {
+            mk: library_kmer_cache[mk]
+            for mk in matched_keys
+            if mk in library_kmer_cache
+        }
+
+        if not subset_kmers:
+            continue
+
+        _, kmer_best_match = KmerMatch(query_kmer_cache[key], subset_kmers)
+        if alignment_cache.get(key) == kmer_best_match:
             agreements += 1
-    
+
     return agreements / total
 
-def generate_agreement(queries, library):
+def generate_agreement(queries, library, n_workers=1):
+    """Compute agreement for a range of window sizes. Optionally parallelize heavy work by
+    specifying n_workers>1 (uses process pool).
+    """
     win = [i for i in range(20, 66, 5)]
     agreements = []
+    if not queries or not library:
+        return agreements
+
+    fixed_k = 7
+
+    # Build caches (alignment and kmer sets). Alignment is CPU-heavy so parallelize when requested.
+    if n_workers and n_workers > 1:
+        def _align_item(item):
+            key, seq = item
+            return key, AlignmentMatch(seq, library)[1]
+
+        items = list(queries.items())
+        alignment_cache = {}
+        with concurrent.futures.ProcessPoolExecutor(max_workers=n_workers) as exc:
+            for key, best_match in exc.map(_align_item, items):
+                alignment_cache[key] = best_match
+    else:
+        alignment_cache = {key: AlignmentMatch(seq, library)[1] for key, seq in queries.items()}
+
+    query_kmer_cache = {key: convert_seq_to_kmer_set(seq, fixed_k) for key, seq in queries.items()}
+    library_kmer_cache = ConvertLibraryToKmerSets(library, fixed_k)
+
     for w in win:
-        min_library = generate_min_library(library, m=w, k=7)
-        agreement = find_minimizer_agreement(queries, min_library, library, m=w, k=7)
+        if n_workers and n_workers > 1:
+            min_library, minimizer_index = generate_min_library_parallel(library, m=w, k=fixed_k, n_workers=n_workers)
+        else:
+            min_library, minimizer_index = generate_min_library(library, m=w, k=fixed_k)
+
+        agreement = find_minimizer_agreement(
+            queries,
+            min_library,
+            library,
+            m=w,
+            k=fixed_k,
+            minimizer_index=minimizer_index,
+            alignment_cache=alignment_cache,
+            query_kmer_cache=query_kmer_cache,
+            library_kmer_cache=library_kmer_cache,
+        )
         agreements.append(agreement)
     return agreements
 
@@ -262,23 +401,25 @@ if __name__ == "__main__":
     fn = "bacterial_16s_genes.fa"
     sequences_16s = Load16SFastA(fn, fraction = 0.015)
 
-    print("Loaded %d 16s sequences." % len(sequences_16s))
+    # print("Loaded %d 16s sequences." % len(sequences_16s))
 
-    library, queries = split_dataset(sequences_16s, 10, 5)
-    print("Library of length %d, Queries of length %d" % (len(library), len(queries)))
+    # library, queries = split_dataset(sequences_16s, 10, 5)
+    # print("Library of length %d, Queries of length %d" % (len(library), len(queries)))
 
-    agreements = find_agreement(library, queries)
-    print(agreements)
+    # agreements = find_agreement(library, queries)
+    # print(agreements)
 
-    ks = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19]
-    plt.plot(ks, agreements)
-    plt.title("Agreement Curve")
-    plt.xlabel("K-mer length")
-    plt.ylabel("Agreement")
-    plt.xticks([1, 3, 5, 7, 9, 11, 13, 15, 17, 19])
-    plt.show()
+    # ks = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19]
+    # plt.plot(ks, agreements)
+    # plt.title("Agreement Curve")
+    # plt.xlabel("K-mer length")
+    # plt.ylabel("Agreement")
+    # plt.xticks([1, 3, 5, 7, 9, 11, 13, 15, 17, 19])
+    # plt.show()
 
     #Task 6: Agreement Curve with minimizer
+
+    library, queries = split_dataset(sequences_16s, 200, 50)
     min_agreements = generate_agreement(queries, library)
     plt.plot([i for i in range(20, 66, 5)], min_agreements)
     plt.title("Minimizer Agreement Curve")
@@ -287,41 +428,41 @@ if __name__ == "__main__":
     plt.xticks([i for i in range(20, 66, 5)])
     plt.show()
 
-    #Task 7
-    print("=============== Testing with 1% mutated queries ===============")
-    library, queries = split_dataset(sequences_16s, 10, 5)
-    print("Library of length %d, Queries of length %d" % (len(library), len(queries)))
+    # #Task 7
+    # print("=============== Testing with 1% mutated queries ===============")
+    # library, queries = split_dataset(sequences_16s, 10, 5)
+    # print("Library of length %d, Queries of length %d" % (len(library), len(queries)))
 
-    for key in queries.keys():
-        queries[key] = mutate_string(queries[key], 1.0/100)
+    # for key in queries.keys():
+    #     queries[key] = mutate_string(queries[key], 1.0/100)
 
-    agreements = find_agreement(queries, library)
-    print(agreements)
+    # agreements = find_agreement(queries, library)
+    # print(agreements)
 
-    plt.plot(ks, agreements)
-    plt.title("Agreement Curve- 1% mutated")
-    plt.xlabel("K-mer length")
-    plt.ylabel("Agreement")
-    plt.xticks([1, 3, 5, 7, 9, 11, 13, 15, 17, 19])
-    plt.show()
+    # plt.plot(ks, agreements)
+    # plt.title("Agreement Curve- 1% mutated")
+    # plt.xlabel("K-mer length")
+    # plt.ylabel("Agreement")
+    # plt.xticks([1, 3, 5, 7, 9, 11, 13, 15, 17, 19])
+    # plt.show()
 
 
-    print("=============== Testing with 10% mutated queries ===============")
-    library, queries = split_dataset(sequences_16s, 10, 5)
-    print("Library of length %d, Queries of length %d" % (len(library), len(queries)))
+    # print("=============== Testing with 10% mutated queries ===============")
+    # library, queries = split_dataset(sequences_16s, 10, 5)
+    # print("Library of length %d, Queries of length %d" % (len(library), len(queries)))
 
-    for key in queries.keys():
-        queries[key] = mutate_string(queries[key], 1.0/10)
+    # for key in queries.keys():
+    #     queries[key] = mutate_string(queries[key], 1.0/10)
 
-    agreements = find_agreement(queries, library)
-    print(agreements)
+    # agreements = find_agreement(queries, library)
+    # print(agreements)
 
-    plt.plot(ks, agreements)
-    plt.title("Agreement Curve- 10% mutated")
-    plt.xlabel("K-mer length")
-    plt.ylabel("Agreement")
-    plt.xticks([1, 3, 5, 7, 9, 11, 13, 15, 17, 19])
-    plt.show()
+    # plt.plot(ks, agreements)
+    # plt.title("Agreement Curve- 10% mutated")
+    # plt.xlabel("K-mer length")
+    # plt.ylabel("Agreement")
+    # plt.xticks([1, 3, 5, 7, 9, 11, 13, 15, 17, 19])
+    # plt.show()
 
 
     # print(queries)
