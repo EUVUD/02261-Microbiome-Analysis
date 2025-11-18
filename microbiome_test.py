@@ -12,6 +12,7 @@ import random
 from collections import defaultdict
 import concurrent.futures
 import matplotlib.pyplot as plt
+import json
 
 def Load16SFastA(path, fraction = 1.0):
     # from a file, read in all sequences and store them in a dictionary
@@ -42,6 +43,18 @@ def split_dataset(seqs, lib_len, quer_len):
     library = dict(items[quer_len:(quer_len + lib_len)])
     queries = dict(items[:quer_len])
     return library, queries
+
+def load_datasets():
+    with open("library_len200.json", "r") as fp:
+        library = json.load(fp)
+
+    with open("queries_len50.json", "r") as fp:
+        queries = json.load(fp)
+
+    with open("alignment_matches.json", "r") as fp:
+        alignment_match = json.load(fp)
+
+    return library, queries, alignment_match
 
 def ConvertLibraryToKmerSets(library, k=2):
     new_lib = {}
@@ -103,6 +116,7 @@ def find_agreement(queries, library):
     '''
     agreements = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     total = len(queries)
+    print("Finding agreements.................")
 
     # Make kmer-sets for each k
     library_k1 = ConvertLibraryToKmerSets(library, k=1)
@@ -115,6 +129,7 @@ def find_agreement(queries, library):
     library_k15 = ConvertLibraryToKmerSets(library, k=15)
     library_k17 = ConvertLibraryToKmerSets(library, k=17)
     library_k19 = ConvertLibraryToKmerSets(library, k=19)
+    print("Finished converting library to kmer sets")
 
     queries_k1 = ConvertLibraryToKmerSets(queries, k=1)
     queries_k3 = ConvertLibraryToKmerSets(queries, k=3)
@@ -127,12 +142,99 @@ def find_agreement(queries, library):
     queries_k17 = ConvertLibraryToKmerSets(queries, k=17)
     queries_k19 = ConvertLibraryToKmerSets(queries, k=19)
 
+    print("Finished converting queries to kmer sets")
+    print("Starting local alignments")
     # Make dict for best match using local alignment
     alignment_match = {}
     for i in queries:
         seq = queries[i]
         best_score, best_match = AlignmentMatch(seq, library)
         alignment_match[i] = best_match
+    print("Finished local alignments")
+    with open('alignment_matches.json', 'w') as file:
+        json.dump(alignment_match, file, indent=4)
+
+    # For each sequence, get the best match using kmer_alignment
+    for i in queries:
+        score_1, match_1 = KmerMatch(queries_k1[i], library_k1)
+        score_3, match_3 = KmerMatch(queries_k3[i], library_k3)
+        score_5, match_5 = KmerMatch(queries_k5[i], library_k5)
+        score_7, match_7 = KmerMatch(queries_k7[i], library_k7)
+        score_9, match_9 = KmerMatch(queries_k9[i], library_k9)
+        score_11, match_11 = KmerMatch(queries_k11[i], library_k11)
+        score_13, match_13 = KmerMatch(queries_k13[i], library_k13)
+        score_15, match_15 = KmerMatch(queries_k15[i], library_k15)
+        score_17, match_17 = KmerMatch(queries_k17[i], library_k17)
+        score_19, match_19 = KmerMatch(queries_k19[i], library_k19)
+
+        # Update agreements based on matches
+        if match_1 == alignment_match[i]:
+            agreements[0] += 1
+        if match_3 == alignment_match[i]:
+            agreements[1] += 1
+        if match_5 == alignment_match[i]:
+            agreements[2] += 1
+        if match_7 == alignment_match[i]:
+            agreements[3] += 1
+        if match_9 == alignment_match[i]:
+            agreements[4] += 1
+        if match_11 == alignment_match[i]:
+            agreements[5] += 1
+        if match_13 == alignment_match[i]:
+            agreements[6] += 1
+        if match_15 == alignment_match[i]:
+            agreements[7] += 1
+        if match_17 == alignment_match[i]:
+            agreements[8] += 1
+        if match_19 == alignment_match[i]:
+            agreements[9] += 1
+
+    ###
+    for i in range(0, len(agreements)):
+        agreements[i] /= total
+
+    return agreements
+
+def find_agreement_fast(queries, library, alignment_match):
+    '''
+    See whether AlignmentMatch and KmerMatch agree on the best library sequence match for
+    (k=1,3,5,7,9,11,13,15,17,19)
+
+    input:
+        queries (dict of sequences)
+        library (dict of sequences)
+    output:
+        agreements (list of fraction of match agreements for k=1,3,5,7,9,11,13,15,17,19)
+    '''
+    agreements = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    total = len(queries)
+    print("Finding agreements.................")
+
+    # Make kmer-sets for each k
+    library_k1 = ConvertLibraryToKmerSets(library, k=1)
+    library_k3 = ConvertLibraryToKmerSets(library, k=3)
+    library_k5 = ConvertLibraryToKmerSets(library, k=5)
+    library_k7 = ConvertLibraryToKmerSets(library, k=7)
+    library_k9 = ConvertLibraryToKmerSets(library, k=9)
+    library_k11 = ConvertLibraryToKmerSets(library, k=11)
+    library_k13 = ConvertLibraryToKmerSets(library, k=13)
+    library_k15 = ConvertLibraryToKmerSets(library, k=15)
+    library_k17 = ConvertLibraryToKmerSets(library, k=17)
+    library_k19 = ConvertLibraryToKmerSets(library, k=19)
+    print("Finished converting library to kmer sets")
+
+    queries_k1 = ConvertLibraryToKmerSets(queries, k=1)
+    queries_k3 = ConvertLibraryToKmerSets(queries, k=3)
+    queries_k5 = ConvertLibraryToKmerSets(queries, k=5)
+    queries_k7 = ConvertLibraryToKmerSets(queries, k=7)
+    queries_k9 = ConvertLibraryToKmerSets(queries, k=9)
+    queries_k11 = ConvertLibraryToKmerSets(queries, k=11)
+    queries_k13 = ConvertLibraryToKmerSets(queries, k=13)
+    queries_k15 = ConvertLibraryToKmerSets(queries, k=15)
+    queries_k17 = ConvertLibraryToKmerSets(queries, k=17)
+    queries_k19 = ConvertLibraryToKmerSets(queries, k=19)
+
+    print("Finished converting queries to kmer sets")
 
     # For each sequence, get the best match using kmer_alignment
     for i in queries:
@@ -404,10 +506,13 @@ if __name__ == "__main__":
     # print("Loaded %d 16s sequences." % len(sequences_16s))
 
     # library, queries = split_dataset(sequences_16s, 10, 5)
-    # print("Library of length %d, Queries of length %d" % (len(library), len(queries)))
+    library, queries, alignment_match = load_datasets()
+    print("Library of length %d, Queries of length %d" % (len(library), len(queries)))
 
-    # agreements = find_agreement(library, queries)
-    # print(agreements)
+    # agreements = find_agreement(queries, library)
+    agreements = find_agreement_fast(queries, library, alignment_match)
+    print(agreements)
+    print("WE DID IT")
 
     # ks = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19]
     # plt.plot(ks, agreements)
