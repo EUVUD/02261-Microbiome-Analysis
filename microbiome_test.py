@@ -534,40 +534,41 @@ if __name__ == "__main__":
     plt.show()
 
     # #Task 7
-    # print("=============== Testing with 1% mutated queries ===============")
-    # library, queries = split_dataset(sequences_16s, 10, 5)
-    # print("Library of length %d, Queries of length %d" % (len(library), len(queries)))
+    ks = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19]
+    print("=============== Testing with 1% mutated queries ===============")
+    library, queries, alignment_match = load_datasets()
+    print("Library of length %d, Queries of length %d" % (len(library), len(queries)))
 
-    # for key in queries.keys():
-    #     queries[key] = mutate_string(queries[key], 1.0/100)
+    for key in queries.keys():
+        queries[key] = mutate_string(queries[key], 1.0/100)
 
-    # agreements = find_agreement(queries, library)
-    # print(agreements)
+    agreements = find_agreement_fast(queries, library, alignment_match)
+    print(agreements)
 
-    # plt.plot(ks, agreements)
-    # plt.title("Agreement Curve- 1% mutated")
-    # plt.xlabel("K-mer length")
-    # plt.ylabel("Agreement")
-    # plt.xticks([1, 3, 5, 7, 9, 11, 13, 15, 17, 19])
-    # plt.show()
+    plt.plot(ks, agreements)
+    plt.title("Agreement Curve- 1% mutated")
+    plt.xlabel("K-mer length")
+    plt.ylabel("Agreement")
+    plt.xticks(ks)
+    plt.show()
 
 
-    # print("=============== Testing with 10% mutated queries ===============")
-    # library, queries = split_dataset(sequences_16s, 10, 5)
-    # print("Library of length %d, Queries of length %d" % (len(library), len(queries)))
+    print("=============== Testing with 10% mutated queries ===============")
+    library, queries, alignment_match = load_datasets()
+    print("Library of length %d, Queries of length %d" % (len(library), len(queries)))
 
-    # for key in queries.keys():
-    #     queries[key] = mutate_string(queries[key], 1.0/10)
+    for key in queries.keys():
+        queries[key] = mutate_string(queries[key], 1.0/10)
 
-    # agreements = find_agreement(queries, library)
-    # print(agreements)
+    agreements = find_agreement_fast(queries, library, alignment_match)
+    print(agreements)
 
-    # plt.plot(ks, agreements)
-    # plt.title("Agreement Curve- 10% mutated")
-    # plt.xlabel("K-mer length")
-    # plt.ylabel("Agreement")
-    # plt.xticks([1, 3, 5, 7, 9, 11, 13, 15, 17, 19])
-    # plt.show()
+    plt.plot(ks, agreements)
+    plt.title("Agreement Curve- 10% mutated")
+    plt.xlabel("K-mer length")
+    plt.ylabel("Agreement")
+    plt.xticks(ks)
+    plt.show()
 
 
     # print(queries)
