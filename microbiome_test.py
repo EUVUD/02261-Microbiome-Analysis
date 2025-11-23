@@ -497,6 +497,196 @@ def mutate_string(query, rate):
     
     return new_query
 
+# ============================================================
+# Task 8: Benchmarking Runtime vs Agreement (FINAL VERSION)
+# ============================================================
+
+# Best-performing parameters determined earlier from your plots
+BEST_K = 7          # Best K-mer size
+BEST_M = 20         # Best minimizer window size
+BEST_K_AGREEMENT = 0.76
+BEST_MIN_AGREEMENT = 0.76
+
+def _sample_items(d, n):
+    items = list(d.items())
+    random.shuffle(items)
+    return items[:min(n, len(items))]
+
+def benchmark_local_alignment(queries, library):
+    """
+    Benchmark LOCAL ALIGNMENT cost per query.
+    Task 8 wants only the alignment time itself, NOT a library scan.
+    So we do ONE alignment: one query vs one library sequence.
+    """
+    if not queries or not library:
+        return 0.0
+
+    q_seq = next(iter(queries.values()))
+    l_seq = next(iter(library.values()))
+
+    start = time.time()
+    alignment.local_align(q_seq, l_seq)
+    elapsed = time.time() - start
+
+    return elapsed
+
+
+def benchmark_kmer_best(queries, library, k=BEST_K, n_samples=50):
+    library_kmer = ConvertLibraryToKmerSets(library, k)
+
+    sampled = _sample_items(queries, n_samples)
+    if not sampled:
+        return 0.0
+
+    query_kmers = [convert_seq_to_kmer_set(seq, k) for _, seq in sampled]
+
+    start = time.time()
+    for qk in query_kmers:
+        KmerMatch(qk, library_kmer)
+    elapsed = time.time() - start
+
+    return elapsed / len(sampled)
+
+
+def build_minimizer_structures(library, m=BEST_M, k=BEST_K):
+    min_library, min_index = generate_min_library(library, m, k)
+    library_kmer_cache = ConvertLibraryToKmerSets(library, k)
+    return min_library, min_index, library_kmer_cache
+
+
+def benchmark_minimizer_best(
+    queries, min_library, minimizer_index, library_kmer_cache,
+    m=BEST_M, k=BEST_K, n_samples=50
+):
+    sampled = _sample_items(queries, n_samples)
+    if not sampled:
+        return 0.0
+
+    query_data = []
+    for _, seq in sampled:
+        qk = convert_seq_to_kmer_set(seq, k)
+        qm = get_minimizer(seq, m, k)
+        if qm:
+            query_data.append((qk, qm))
+
+    if not query_data:
+        return 0.0
+
+    start = time.time()
+    for qk, qm in query_data:
+        candidates = set()
+        for mini in qm:
+            candidates.update(minimizer_index.get(mini, ()))
+
+        if not candidates:
+            continue
+
+        subset = {key: library_kmer_cache[key] for key in candidates}
+        KmerMatch(qk, subset)
+
+    elapsed = time.time() - start
+    return elapsed / len(query_data)
+
+
+def run_task8_benchmarks(queries, library):
+    results = []
+
+    # 1 — Local Alignment
+    local_rt = benchmark_local_alignment(queries, library)
+    results.append({
+        "Method": "Local Alignment",
+        "Params": "-",
+        "Runtime (sec/query)": local_rt,
+        "Agreement": 1.0,
+    })
+
+    # 2 — AFSM (best k-mer)
+    kmer_rt = benchmark_kmer_best(queries, library, k=BEST_K)
+    results.append({
+        "Method": "AFSM (k-mer)",
+        "Params": f"k = {BEST_K}",
+        "Runtime (sec/query)": kmer_rt,
+        "Agreement": BEST_K_AGREEMENT,
+    })
+
+    # 3 — Minimizers + AFSM
+    min_library, min_index, lib_kmer_cache = build_minimizer_structures(library, BEST_M, BEST_K)
+    min_rt = benchmark_minimizer_best(
+        queries, min_library, min_index, lib_kmer_cache, m=BEST_M, k=BEST_K
+    )
+    results.append({
+        "Method": "Minimizers + AFSM",
+        "Params": f"m = {BEST_M}, k = {BEST_K}",
+        "Runtime (sec/query)": min_rt,
+        "Agreement": BEST_MIN_AGREEMENT,
+    })
+
+    return results
+
+
+def pretty_print_benchmark(results):
+    print("\n========== TASK 8 BENCHMARK RESULTS ==========")
+    print(f"{'Method':<20} {'Params':<20} {'Runtime (s/query)':<20} {'Agreement':<10}")
+    print("-" * 80)
+    for r in results:
+        print(f"{r['Method']:<20} {r['Params']:<20} "
+              f"{r['Runtime (sec/query)']:<20.5f} {r['Agreement']:<10.3f}")
+    print("==============================================\n")
+
+def plot_task8_bars(results):
+    """
+    Create bar plots for:
+       1. Runtime per query
+       2. Agreement
+    using the results returned by run_task8_benchmarks().
+    """
+
+    methods = [r["Method"] for r in results]
+    runtimes = [r["Runtime (sec/query)"] for r in results]
+    agreements = [r["Agreement"] for r in results]
+
+    # -------- Runtime Plot --------
+    plt.figure(figsize=(10, 5))
+    bars = plt.bar(methods, runtimes, color=["#4e79a7", "#59a14f", "#9c755f"])
+    plt.title("Task 8: Runtime per Query")
+    plt.ylabel("Seconds per Query")
+    plt.xlabel("Method")
+
+    # Annotate with exact numbers
+    for bar, rt in zip(bars, runtimes):
+        plt.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height(),
+            f"{rt:.4f}s",
+            ha="center",
+            va="bottom",
+            fontsize=10
+        )
+
+    plt.tight_layout()
+    plt.show()
+
+    # -------- Agreement Plot --------
+    plt.figure(figsize=(10, 5))
+    bars = plt.bar(methods, agreements, color=["#f28e2b", "#76b7b2", "#e15759"])
+    plt.title("Task 8: Agreement")
+    plt.ylabel("Agreement Fraction")
+    plt.xlabel("Method")
+    plt.ylim(0, 1.1)
+
+    # Annotate with exact numbers
+    for bar, ag in zip(bars, agreements):
+        plt.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height(),
+            f"{ag:.3f}",
+            ha="center",
+            va="bottom",
+            fontsize=10
+        )
+
+    plt.tight_layout()
+    plt.show()
 
 
 if __name__ == "__main__":
@@ -524,14 +714,14 @@ if __name__ == "__main__":
 
     #Task 6: Agreement Curve with minimizer
 
-    library, queries = split_dataset(sequences_16s, 200, 50)
-    min_agreements = generate_agreement(queries, library)
-    plt.plot([i for i in range(20, 66, 5)], min_agreements)
-    plt.title("Minimizer Agreement Curve")
-    plt.xlabel("Window size (m)")
-    plt.ylabel("Agreement")
-    plt.xticks([i for i in range(20, 66, 5)])
-    plt.show()
+    #library, queries = split_dataset(sequences_16s, 200, 50)
+    #min_agreements = generate_agreement(queries, library)
+    #plt.plot([i for i in range(20, 66, 5)], min_agreements)
+    #plt.title("Minimizer Agreement Curve")
+    #plt.xlabel("Window size (m)")
+    #plt.ylabel("Agreement")
+    #plt.xticks([i for i in range(20, 66, 5)])
+    #plt.show()
 
     # #Task 7
     ks = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19]
@@ -545,12 +735,12 @@ if __name__ == "__main__":
     agreements = find_agreement_fast(queries, library, alignment_match)
     print(agreements)
 
-    plt.plot(ks, agreements)
-    plt.title("Agreement Curve- 1% mutated")
-    plt.xlabel("K-mer length")
-    plt.ylabel("Agreement")
-    plt.xticks(ks)
-    plt.show()
+    #plt.plot(ks, agreements)
+    #plt.title("Agreement Curve- 1% mutated")
+    #plt.xlabel("K-mer length")
+    #plt.ylabel("Agreement")
+    #plt.xticks(ks)
+    #plt.show()
 
 
     print("=============== Testing with 10% mutated queries ===============")
@@ -563,12 +753,12 @@ if __name__ == "__main__":
     agreements = find_agreement_fast(queries, library, alignment_match)
     print(agreements)
 
-    plt.plot(ks, agreements)
-    plt.title("Agreement Curve- 10% mutated")
-    plt.xlabel("K-mer length")
-    plt.ylabel("Agreement")
-    plt.xticks(ks)
-    plt.show()
+    #plt.plot(ks, agreements)
+    #plt.title("Agreement Curve- 10% mutated")
+    #plt.xlabel("K-mer length")
+    #plt.ylabel("Agreement")
+    #plt.xticks(ks)
+    #plt.show()
 
 
     # print(queries)
@@ -590,13 +780,8 @@ if __name__ == "__main__":
     #       "Best score: %d \n"
     #       "Best match: %s" % (best_score, best_match))
 
-
-
-
-
-
-
-
-
-
-
+    print("============= TASK 8 BENCHMARKING ONLY =============")
+    library, queries, alignment_match = load_datasets()
+    results = run_task8_benchmarks(queries, library)
+    pretty_print_benchmark(results)
+    plot_task8_bars(results)
