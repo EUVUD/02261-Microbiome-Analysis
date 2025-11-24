@@ -481,6 +481,42 @@ def generate_agreement(queries, library, n_workers=1):
         agreements.append(agreement)
     return agreements
 
+def fast_generate_agreement(queries, library, alignment_cache, n_workers=1):
+    """Compute agreement for a range of window sizes. Optionally parallelize heavy work by
+    specifying n_workers>1 (uses process pool).
+    """
+    win = [i for i in range(20, 66, 5)]
+    agreements = []
+    if not queries or not library:
+        return agreements
+
+    fixed_k = 7
+
+
+
+    query_kmer_cache = {key: convert_seq_to_kmer_set(seq, fixed_k) for key, seq in queries.items()}
+    library_kmer_cache = ConvertLibraryToKmerSets(library, fixed_k)
+
+    for w in win:
+        if n_workers and n_workers > 1:
+            min_library, minimizer_index = generate_min_library_parallel(library, m=w, k=fixed_k, n_workers=n_workers)
+        else:
+            min_library, minimizer_index = generate_min_library(library, m=w, k=fixed_k)
+
+        agreement = find_minimizer_agreement(
+            queries,
+            min_library,
+            library,
+            m=w,
+            k=fixed_k,
+            minimizer_index=minimizer_index,
+            alignment_cache=alignment_cache,
+            query_kmer_cache=query_kmer_cache,
+            library_kmer_cache=library_kmer_cache,
+        )
+        agreements.append(agreement)
+    return agreements
+
 def mutate_string(query, rate):
     new_query = ""
     for char in query:
@@ -685,24 +721,24 @@ if __name__ == "__main__":
     print(agreements)
     print("WE DID IT")
 
-    # ks = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19]
-    # plt.plot(ks, agreements)
-    # plt.title("Agreement Curve")
-    # plt.xlabel("K-mer length")
-    # plt.ylabel("Agreement")
-    # plt.xticks([1, 3, 5, 7, 9, 11, 13, 15, 17, 19])
-    # plt.show()
+    ks = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19]
+    plt.plot(ks, agreements)
+    plt.title("Agreement Curve")
+    plt.xlabel("K-mer length")
+    plt.ylabel("Agreement")
+    plt.xticks([1, 3, 5, 7, 9, 11, 13, 15, 17, 19])
+    plt.show()
 
     #Task 6: Agreement Curve with minimizer
 
-    #library, queries = split_dataset(sequences_16s, 200, 50)
-    #min_agreements = generate_agreement(queries, library)
-    #plt.plot([i for i in range(20, 66, 5)], min_agreements)
-    #plt.title("Minimizer Agreement Curve")
-    #plt.xlabel("Window size (m)")
-    #plt.ylabel("Agreement")
-    #plt.xticks([i for i in range(20, 66, 5)])
-    #plt.show()
+    # library, queries = split_dataset(sequences_16s, 200, 50)
+    # min_agreements = generate_agreement(queries, library)
+    # plt.plot([i for i in range(20, 66, 5)], min_agreements)
+    # plt.title("Minimizer Agreement Curve")
+    # plt.xlabel("Window size (m)")
+    # plt.ylabel("Agreement")
+    # plt.xticks([i for i in range(20, 66, 5)])
+    # plt.show()
 
     # #Task 7
     ks = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19]
@@ -716,12 +752,12 @@ if __name__ == "__main__":
     agreements = find_agreement_fast(queries, library, alignment_match)
     print(agreements)
 
-    #plt.plot(ks, agreements)
-    #plt.title("Agreement Curve- 1% mutated")
-    #plt.xlabel("K-mer length")
-    #plt.ylabel("Agreement")
-    #plt.xticks(ks)
-    #plt.show()
+    plt.plot(ks, agreements)
+    plt.title("Agreement Curve- 1% mutated")
+    plt.xlabel("K-mer length")
+    plt.ylabel("Agreement")
+    plt.xticks(ks)
+    plt.show()
 
 
     print("=============== Testing with 10% mutated queries ===============")
@@ -734,32 +770,45 @@ if __name__ == "__main__":
     agreements = find_agreement_fast(queries, library, alignment_match)
     print(agreements)
 
-    #plt.plot(ks, agreements)
-    #plt.title("Agreement Curve- 10% mutated")
-    #plt.xlabel("K-mer length")
-    #plt.ylabel("Agreement")
-    #plt.xticks(ks)
-    #plt.show()
+    plt.plot(ks, agreements)
+    plt.title("Agreement Curve- 10% mutated")
+    plt.xlabel("K-mer length")
+    plt.ylabel("Agreement")
+    plt.xticks(ks)
+    plt.show()
+
+    print("============================== TASK 7 - 12 units =====================================")
+    print("=============== Testing with 1% mutated queries ===============")
+    library, queries, alignment_match = load_datasets()
+    print("Library of length %d, Queries of length %d" % (len(library), len(queries)))
+
+    for key in queries.keys():
+        queries[key] = mutate_string(queries[key], 1.0 / 100)
+
+    min_agreements = fast_generate_agreement(queries, library, alignment_match)
+    plt.plot([i for i in range(20, 66, 5)], min_agreements)
+    plt.title("Minimizer Agreement Curve for 1% Mutated")
+    plt.xlabel("Window size (m)")
+    plt.ylabel("Agreement")
+    plt.xticks([i for i in range(20, 66, 5)])
+    plt.show()
+
+    print("=============== Testing with 10% mutated queries ===============")
+    library, queries, alignment_match = load_datasets()
+    print("Library of length %d, Queries of length %d" % (len(library), len(queries)))
+
+    for key in queries.keys():
+        queries[key] = mutate_string(queries[key], 1.0 / 10)
+
+    min_agreements = fast_generate_agreement(queries, library, alignment_match)
+    plt.plot([i for i in range(20, 66, 5)], min_agreements)
+    plt.title("Minimizer Agreement Curve for 10% Mutated")
+    plt.xlabel("Window size (m)")
+    plt.ylabel("Agreement")
+    plt.xticks([i for i in range(20, 66, 5)])
+    plt.show()
 
 
-    # print(queries)
-
-    # seq1 = queries['RS_GCF_001553625.1~NZ_CP014230.1 d__Bacteria;p__Desulfobacterota;c__Desulfovibrionia;o__Desulfovibrionales;f__Desulfomicrobiaceae;g__Desulfomicrobium;s__ 1548 2783374']
-    # best_score, best_match = AlignmentMatch(seq1, library)
-    # print("----------------------\n"
-    #       "LOCAL ALIGNMENT\n "
-    #       "Best score: %d \n"
-    #       "Best match: %s" % (best_score, best_match))
-    # kmer_16s_sequences = ConvertLibraryToKmerSets(sequences_16s, k=6)
-    # print(convert_seq_to_kmer_set('ACTGA', 4))
-
-    # kmers = convert_seq_to_kmer_set(seq1)
-    # library_kmers = ConvertLibraryToKmerSets(library)
-    # best_score, best_match = KmerMatch(kmers, library_kmers)
-    # print("----------------------\n"
-    #       "KMER ALIGNMENT\n "
-    #       "Best score: %d \n"
-    #       "Best match: %s" % (best_score, best_match))
 
     print("============= TASK 8 BENCHMARKING ONLY =============")
     library, queries, alignment_match = load_datasets()
